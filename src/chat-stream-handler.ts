@@ -45,14 +45,14 @@ export const openAiStreamingDataHandler = async (
   // Initiate the completion request
   const response = await fetch(CHAT_COMPLETIONS_URL, requestOpts);
 
-  // If the response isn't OK (non-2XX HTTP code) report the HTTP status and description.
+  // If the response isn't OK (non-2XX HTTP code), report the HTTP status and description.
   if (!response.ok) {
     throw new Error(
       `Network response was not ok: ${response.status} - ${response.statusText}`
     );
   }
 
-  // A response body should always exist, if there isn't one something has gone wrong.
+  // A response body should always exist, if there isn't one, something has gone wrong.
   if (!response.body) {
     throw new Error('No body included in POST response object');
   }
@@ -60,41 +60,50 @@ export const openAiStreamingDataHandler = async (
   let content = '';
   let role = '';
 
-  for await (const newData of response.body as unknown as NodeJS.ReadableStream) {
-    // Decode the data
-    const decodedData = textDecoder.decode(newData as Buffer);
-    // Split the data into lines to process
-    const lines = decodedData.split(/(\n){2}/);
-    // Parse the lines into chat completion chunks
-    const chunks: OpenAIChatCompletionChunk[] = lines
-      // Remove 'data:' prefix off each line
-      .map((line) => line.replace(/(\n)?^data:\s*/, '').trim())
-      // Remove empty lines and "[DONE]"
-      .filter((line) => line !== '' && line !== '[DONE]')
-      // Parse JSON string
-      .map((line) => JSON.parse(line));
+  const reader = response.body.getReader();
+  let done = false;
+  let decodedData = '';
 
-    // Process each chunk and send an update to the registered handler.
-    for (const chunk of chunks) {
-      // Avoid empty line after single backtick
-      const contentChunk: string = (
-        chunk.choices[0].delta.content ?? ''
-      ).replace(/^`\s*/, '`');
-      // Most times the chunk won't contain a role, in those cases set the role to ""
-      const roleChunk: OpenAIChatRole = chunk.choices[0].delta.role ?? '';
+  while (!done) {
+    const { value, done: readerDone } = await reader.read();
+    done = readerDone;
 
-      // Assign the new data to the rest of the data already received.
-      content = `${content}${contentChunk}`;
-      role = `${role}${roleChunk}`;
+    if (value) {
+      const chunk = new TextDecoder().decode(value);
+      decodedData += chunk;
 
-      onIncomingChunk(contentChunk, roleChunk);
+      // Process the chunk and send an update to the registered handler.
+      const lines = decodedData.split(/(\n){2}/);
+      const numLines = lines.length;
+
+      for (let i = 0; i < numLines - 1; i++) {
+        const trimmedLine = lines[i].replace(/(\n)?^data:\s*/, '').trim();
+
+        if (trimmedLine !== '' && trimmedLine !== '[DONE]') {
+          const chunk = JSON.parse(trimmedLine);
+
+          const contentChunk: string = (
+            chunk.choices[0].delta.content ?? ''
+          ).replace(/^`\s*/, '`');
+
+          const roleChunk: OpenAIChatRole = chunk.choices[0].delta.role ?? '';
+
+          content += contentChunk;
+          role += roleChunk;
+
+          onIncomingChunk(contentChunk, roleChunk);
+        }
+      }
+
+      // Keep the last line in `decodedData` in case it's incomplete
+      decodedData = lines[numLines - 1];
     }
   }
 
   onCloseStream(beforeTimestamp);
 
-  // Return the fully-assembled chat completion.
   return { content, role } as OpenAIChatMessage;
 };
+
 
 export default openAiStreamingDataHandler;
