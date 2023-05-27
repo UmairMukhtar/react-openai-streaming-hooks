@@ -181,6 +181,10 @@ npm run example
     <img src="https://github.com/MatchuPitchu.png" alt="Michael Flohr" title="Michael Flohr" width="100" height="100"/>
     <span>Michael Flohr</span>
   </a>
+    <a href="https://github.com/UmairMukhtar" style="display: flex; flex-direction: column; align-items: center; padding: 0 10px 0 0;">
+    <img src="https://avatars.githubusercontent.com/u/34018917?v=4" alt="Michael Flohr" title="Michael Flohr" width="100" height="100"/>
+    <span>Umair Mukhtar</span>
+  </a>
 </div>
 
 ### Future Contributions
