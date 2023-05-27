@@ -16,9 +16,9 @@ The library then decorates every Completion response with metadata about the tra
 
 ## Example
 
-![Usage example](https://github.com/jonrhall/openai-streaming-hooks/blob/main/example/example.gif)
+![Usage example](https://github.com/UmairMukhtar/react-openai-streaming-hooks/blob/main/example/example.gif)
 
-[Example code here](https://github.com/jonrhall/openai-streaming-hooks/blob/main/example/example.tsx)
+[Example code here](https://github.com/UmairMukhtar/react-openai-streaming-hooks/blob/main/example/example.tsx)
 
 See section on [running the example](#running-the-example) for more information.
 
@@ -27,7 +27,7 @@ See section on [running the example](#running-the-example) for more information.
 1. Install the OpenAI Streaming Hooks library via a package manager like `npm` or `yarn`:
 
 ```bash
-npm install --save openai-streaming-hooks
+npm install --save react-openai-streaming-hooks
 ```
 
 2. Import the hook and use it:
@@ -152,7 +152,7 @@ If the `resetMessages` function is called the messages list will be set back to 
 1. Clone this package locally and navigate to it:
 
 ```bash
-git clone https://github.com/jonrhall/openai-streaming-hooks.git
+git clone https://github.com/UmairMukhtar/react-openai-streaming-hooks.git
 cd openai-streaming-hooks
 ```
 
@@ -188,4 +188,4 @@ npm run example
 - This package accepts contributions in the form of Pull Requests against the `main` branch.
 - Please follow the coding format as put forth in the ESLint and Prettier definitions used in the package.
 - Passing unit tests for all new code/functionality also is greatly appreciated, if not mandatory for PR acceptance in most cases.
-- Before contributing, please see our developer [Code of Conduct](https://github.com/jonrhall/openai-streaming-hooks/blob/main/CODE_OF_CONDUCT.md).
+- Before contributing, please see our developer [Code of Conduct](https://github.com/UmairMukhtar/react-openai-streaming-hooks/blob/main/CODE_OF_CONDUCT.md).

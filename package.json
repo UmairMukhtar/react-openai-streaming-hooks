@@ -1,6 +1,6 @@
 {
-  "name": "openai-streaming-hooks",
-  "version": "2.0.0",
+  "name": "react-openai-streaming-hooks",
+  "version": "1.0.1",
   "description": "React Hooks for streaming connections to OpenAI APIs",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -15,13 +15,14 @@
     "test:coverage": "vitest run --coverage",
     "prettier": "prettier --write ."
   },
-  "keywords": ["react", "react-hooks", "openai"],
-  "author": "jonrhall",
+  "keywords": [
+    "react",
+    "react-hooks",
+    "openai"
+  ],
+  "author": "UmairMukhtar",
   "contributors": [
-    {
-      "name": "Michael Flohr",
-      "url": "https://github.com/MatchuPitchu"
-    }
+    "Umair Mukhtar (https://github.com/UmairMukhtar)"
   ],
   "license": "MIT",
   "dependencies": {
@@ -47,5 +48,17 @@
     "typescript": "^5.0.2",
     "vite": "^4.2.1",
     "vitest": "^0.31.0"
-  }
+  },
+  "directories": {
+    "example": "example",
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/UmairMukhtar/react-openai-streaming-hooks.git"
+  },
+  "bugs": {
+    "url": "https://github.com/UmairMukhtar/react-openai-streaming-hooks/issues"
+  },
+  "homepage": "https://github.com/UmairMukhtar/react-openai-streaming-hooks#readme"
 }
