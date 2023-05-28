@@ -33,7 +33,7 @@ npm install --save react-openai-streaming-hooks
 2. Import the hook and use it:
 
 ```tsx
-import { useChatCompletion } from 'openai-streaming-hooks';
+import { useChatCompletion } from 'react-openai-streaming-hooks';
 
 const Component = () => {
   const { messages, submitPrompt } = useChatCompletion({
