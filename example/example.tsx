@@ -21,7 +21,7 @@ const ExampleComponent = () => {
     apiKey: import.meta.env.VITE_OPENAI_API_KEY,
     temperature: 0.9,
   });
-
+  
   const onSend = () => {
     submitPrompt([{ content: promptText, role: 'user' }]);
     setPromptText('');

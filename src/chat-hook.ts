@@ -13,15 +13,26 @@ import type {
 
 const MILLISECONDS_PER_SECOND = 1000;
 
-// Utility method for transforming a chat message decorated with metadata to a more limited shape
-// that the OpenAI API expects.
+const SYSTEM_PROMPT = `You are an expert Odoo ERP assistant and data analyst at current year is 2026.
+
+        Your job:
+        - Identify Main cause of the user
+        - Append synonyms of main cause 
+and append these words to the Main cause string
+		- Change Plural words to single
+		- Always try to find a tool to fulfill requirements
+		- If you do not find a tool let the user know
+    - Use tool results carefully
+    - Give the most relevent model based on the data returned by tools
+    - NEVER GIVE DIRECT ANSWER EVEN IF YOU THINK YOU KNOW
+    - IF you fine multiple relevent models ask user about it`;
+
 const officialOpenAIParams = ({
   content,
   role,
 }: ChatMessage): OpenAIChatMessage => ({ content, role });
 
-// Utility method for transforming a chat message that may or may not be decorated with metadata
-// to a fully-fledged chat message with metadata.
+
 const createChatMessage = ({
   content,
   role,
@@ -38,7 +49,7 @@ const createChatMessage = ({
   },
 });
 
-// Utility method for updating the last item in a list.
+
 const updateLastItem =
   <T>(msgFn: (message: T) => T) =>
   (currentMessages: T[]) =>
@@ -56,60 +67,57 @@ export const useChatCompletion = (apiParams: OpenAIStreamingParams) => {
     null
   );
 
-  // Abort an in-progress streaming response
   const abortResponse = () => {
+    console.log("Calling abort response")
     if (controller) {
       controller.abort();
       setController(null);
     }
   };
 
-  // Reset the messages list as long as a response isn't being loaded.
   const resetMessages = () => {
     if (!loading) {
       _setMessages([]);
     }
   };
 
-  // Overwrites all existing messages with the list of messages passed to it.
   const setMessages = (newMessages: ChatMessageParams[]) => {
     if (!loading) {
       _setMessages(newMessages.map(createChatMessage));
     }
   };
 
-  // When new data comes in, add the incremental chunk of data to the last message.
   const handleNewData = (chunkContent: string, chunkRole: OpenAIChatRole) => {
-    _setMessages(
-      updateLastItem((msg) => ({
-        content: `${msg.content}${chunkContent}`,
-        role: `${msg.role}${chunkRole}` as OpenAIChatRole,
-        timestamp: 0,
-        meta: {
-          ...msg.meta,
-          chunks: [
-            ...msg.meta.chunks,
-            {
-              content: chunkContent,
-              role: chunkRole,
-              timestamp: Date.now(),
-            },
-          ],
-        },
-      }))
-    );
-  };
+  _setMessages(
+    updateLastItem((msg) => ({
+      content: `${msg.content}${chunkContent}`,
 
-  // Handles what happens when the stream of a given completion is finished.
+      role: 'assistant' as OpenAIChatRole,
+
+      timestamp: 0,
+
+      meta: {
+        ...msg.meta,
+        chunks: [
+          ...msg.meta.chunks,
+          {
+            content: chunkContent,
+            role: 'assistant' as OpenAIChatRole,
+            timestamp: Date.now(),
+          },
+        ],
+      },
+    }))
+  );
+};
+
+
   const closeStream = (beforeTimestamp: number) => {
-    // Determine the final timestamp, and calculate the number of seconds the full request took.
     const afterTimestamp = Date.now();
     const diffInSeconds =
       (afterTimestamp - beforeTimestamp) / MILLISECONDS_PER_SECOND;
     const formattedDiff = diffInSeconds.toFixed(2) + ' sec.';
 
-    // Update the messages list, specifically update the last message entry with the final
-    // details of the full request/response.
     _setMessages(
       updateLastItem((msg) => ({
         ...msg,
@@ -125,19 +133,13 @@ export const useChatCompletion = (apiParams: OpenAIStreamingParams) => {
 
   const submitPrompt = React.useCallback(
     async (newMessages?: ChatMessageParams[]) => {
-      // Don't let two streaming calls occur at the same time. If the last message in the list has
-      // a `loading` state set to true, we know there is a request in progress.
       if (messages[messages.length - 1]?.meta?.loading) return;
 
-      // If the array is empty or there are no new messages submited, do not make a request.
       if (!newMessages || newMessages.length < 1) {
         return;
       }
 
       setLoading(true);
-
-      // Update the messages list with the new message as well as a placeholder for the next message
-      // that will be returned from the API.
       const updatedMessages: ChatMessage[] = [
         ...messages,
         ...newMessages.map(createChatMessage),
@@ -152,31 +154,28 @@ export const useChatCompletion = (apiParams: OpenAIStreamingParams) => {
       // Set the updated message list.
       _setMessages(updatedMessages);
 
-      // Create a controller that can abort the entire request.
       const newController = new AbortController();
       const signal = newController.signal;
       setController(newController);
 
-      // Define options that will be a part of the HTTP request.
       const requestOpts = getOpenAiRequestOptions(
         apiParams,
-        updatedMessages
-          // Filter out the last message, since technically that is the message that the server will
-          // return from this request, we're just storing a placeholder for it ahead of time to signal
-          // to the UI something is happening.
-          .filter((m, i) => updatedMessages.length - 1 !== i)
-          // Map the updated message structure to only what the OpenAI API expects.
-          .map(officialOpenAIParams),
+        [
+          {
+            role: 'system',
+            content: SYSTEM_PROMPT,
+          },
+          ...updatedMessages
+            .filter((m, i) => updatedMessages.length - 1 !== i)
+            .map(officialOpenAIParams),
+        ],
         signal
       );
 
       try {
-        // Wait for all the results to be streamed back to the client before proceeding.
         await openAiStreamingDataHandler(
           requestOpts,
-          // The handleNewData function will be called as new data is received.
           handleNewData,
-          // The closeStream function be called when the message stream has been completed.
           closeStream
         );
       } catch (err) {
@@ -186,9 +185,7 @@ export const useChatCompletion = (apiParams: OpenAIStreamingParams) => {
           console.error(`Error during chat response streaming`, err);
         }
       } finally {
-        // Remove the AbortController now the response has completed.
         setController(null);
-        // Set the loading state to false
         setLoading(false);
       }
     },
