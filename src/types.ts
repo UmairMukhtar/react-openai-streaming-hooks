@@ -1,8 +1,8 @@
-export type GPT35Model = 'gpt-3.5-turbo' | 'gpt-3.5-turbo-0301';
+export type GPT35Model = 'gpt-3.5-turbo' | 'gpt-3.5-turbo-0301' | 'qwen3:8b' | 'qwen3-8b-instruct'| 'qwen2.5:7b-instruct';
 
 export type GPT4Model = 'gpt-4' | 'gpt-4-0314' | 'gpt-4-32k' | 'gpt-4-32k-0314';
 
-export type OpenAIChatRole = 'user' | 'assistant' | 'system' | '';
+export type OpenAIChatRole = 'user' | 'assistant' | 'system' | 'tool' |'';
 
 export type Model = GPT35Model | GPT4Model;
 
@@ -65,5 +65,6 @@ export interface FetchRequestOptions {
   headers: Record<string, string>;
   method: 'POST';
   body: string;
+  messages:OpenAIChatMessage[],
   signal?: AbortSignal;
 }

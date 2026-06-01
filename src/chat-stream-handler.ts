@@ -1,108 +1,233 @@
+import OpenAI from 'openai';
+import {tools,executeToolCall} from "../example/tools"
+
 import type {
   OpenAIStreamingParams,
   OpenAIChatMessage,
   FetchRequestOptions,
   OpenAIChatRole,
-  OpenAIChatCompletionChunk,
 } from './types';
 
-// Converts the OpenAI API params + chat messages list + an optional AbortSignal into a shape that
-// the fetch interface expects.
 export const getOpenAiRequestOptions = (
   { apiKey, model, ...restOfApiParams }: OpenAIStreamingParams,
   messages: OpenAIChatMessage[],
   signal?: AbortSignal
 ): FetchRequestOptions => ({
-  headers: {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${apiKey}`,
-  },
-  method: 'POST',
-  body: JSON.stringify({
-    model,
-    // Includes all settings related to how the user wants the OpenAI API to execute their request.
-    ...restOfApiParams,
-    messages,
-    stream: true,
-  }),
+  model,
+  apiKey,
+  messages,
   signal,
+  ...restOfApiParams,
 });
 
-const CHAT_COMPLETIONS_URL = 'https://api.openai.com/v1/chat/completions';
-
-const textDecoder = new TextDecoder('utf-8');
-
-// Takes a set of fetch request options and calls the onIncomingChunk and onCloseStream functions
-// as chunks of a chat completion's data are returned to the client, in real-time.
 export const openAiStreamingDataHandler = async (
   requestOpts: FetchRequestOptions,
-  onIncomingChunk: (contentChunk: string, roleChunk: OpenAIChatRole) => void,
+  onIncomingChunk: (
+    contentChunk: string,
+    roleChunk: OpenAIChatRole
+  ) => void,
   onCloseStream: (beforeTimestamp: number) => void
 ) => {
-  // Record the timestamp before the request starts.
   const beforeTimestamp = Date.now();
 
-  // Initiate the completion request
-  const response = await fetch(CHAT_COMPLETIONS_URL, requestOpts);
+  const {
+    model,
+    messages,
+    signal: externalSignal,
+    apiKey,
+    ...rest
+  } = requestOpts as any;
 
-  // If the response isn't OK (non-2XX HTTP code), report the HTTP status and description.
-  if (!response.ok) {
-    throw new Error(
-      `Network response was not ok: ${response.status} - ${response.statusText}`
+
+  const dynamicClient = new OpenAI({
+    apiKey,
+    baseURL: 'http://localhost:1234/v1',
+    dangerouslyAllowBrowser: true,
+  });
+
+  try {
+    // =========================
+    // 1. FIRST ASSISTANT CALL
+    // =========================
+    const stream = await dynamicClient.chat.completions.create(
+      {
+        model,
+        messages,
+        stream: true,
+        tools,
+        tool_choice: 'auto',
+        ...rest,
+      },
+      { signal }
     );
-  }
 
-  // A response body should always exist, if there isn't one, something has gone wrong.
-  if (!response.body) {
-    throw new Error('No body included in POST response object');
-  }
+    let content = '';
+    const toolCalls: Record<
+      number,
+      { id: string; name: string; arguments: string }
+    > = {};
 
-  let content = '';
-  let role = '';
+    let lastToolUpdate = Date.now();
+    let streamAborted = false;
 
-  const reader = response.body.getReader();
-  let done = false;
-  let decodedData = '';
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta;
+      if (!delta) continue;
 
-  while (!done) {
-    const { value, done: readerDone } = await reader.read();
-    done = readerDone;
+      // =========================
+      // TOOL COLLECTION
+      // =========================
+      if (delta.tool_calls) {
+        for (const toolCall of delta.tool_calls) {
+          const index = toolCall.index;
 
-    if (value) {
-      const chunk = new TextDecoder().decode(value);
-      decodedData += chunk;
+          if (!toolCalls[index]) {
+            toolCalls[index] = {
+              id: toolCall.id || `call_${Math.random().toString(36).slice(2)}`,
+              name: '',
+              arguments: '',
+            };
+          }
 
-      // Process the chunk and send an update to the registered handler.
-      const lines = decodedData.split(/(\n){2}/);
-      const numLines = lines.length;
+          if (toolCall.function?.name) {
+            toolCalls[index].name += toolCall.function.name;
+            lastToolUpdate = Date.now();
+          }
 
-      for (let i = 0; i < numLines - 1; i++) {
-        const trimmedLine = lines[i].replace(/(\n)?^data:\s*/, '').trim();
-
-        if (trimmedLine !== '' && trimmedLine !== '[DONE]') {
-          const chunk = JSON.parse(trimmedLine);
-
-          const contentChunk: string = (
-            chunk.choices[0].delta.content ?? ''
-          ).replace(/^`\s*/, '`');
-
-          const roleChunk: OpenAIChatRole = chunk.choices[0].delta.role ?? '';
-
-          content += contentChunk;
-          role += roleChunk;
-
-          onIncomingChunk(contentChunk, roleChunk);
+          if (toolCall.function?.arguments) {
+            toolCalls[index].arguments += toolCall.function.arguments;
+            lastToolUpdate = Date.now();
+          }
         }
       }
 
-      // Keep the last line in `decodedData` in case it's incomplete
-      decodedData = lines[numLines - 1];
+      const contentChunk = delta.content ?? '';
+      content += contentChunk;
+
+      if (contentChunk) {
+        onIncomingChunk(contentChunk, 'assistant');
+      }
+
+      // =========================
+      // 🚨 STOP CONDITION (NEW)
+      // =========================
+      const toolsReady = Object.values(toolCalls).every(
+        (t) => t.name.length > 0 && t.arguments.length > 0
+      );
+
+      const idleTime = Date.now() - lastToolUpdate;
+
+      // if (toolsReady && idleTime > 50 && Object.keys(toolCalls).length > 0) {
+      //   streamAborted = true;
+      //   controller.abort(); // 🔥 STOP STREAM IMMEDIATELY
+      //   break;
+      // }
     }
+
+    console.log('Tool calls found:', Object.keys(toolCalls).length);
+
+    // =========================
+    // 2. NO TOOL → FINISH EARLY
+    // =========================
+    if (Object.keys(toolCalls).length === 0) {
+      onCloseStream(beforeTimestamp);
+      return {
+        content,
+        role: 'assistant' as OpenAIChatRole,
+      };
+    }
+
+    // =========================
+    // 3. FLUSH UI BEFORE TOOL PHASE
+    // =========================
+    onIncomingChunk('\n', 'assistant');
+
+    const updatedMessages = [...messages];
+
+    updatedMessages.push({
+      role: 'assistant',
+      content,
+      tool_calls: Object.values(toolCalls).map((tc) => ({
+        id: tc.id,
+        type: 'function',
+        function: {
+          name: tc.name,
+          arguments: tc.arguments,
+        },
+      })),
+    } as any);
+
+    // =========================
+    // 4. TOOL EXECUTION
+    // =========================
+    const toolNames = Object.values(toolCalls)
+      .map((t) => t.name)
+      .join(', ');
+
+    onIncomingChunk(
+      `⏳ Retrieving data from: ${toolNames}...\n\n`,
+      'system' as OpenAIChatRole
+    );
+
+    for (const tool of Object.values(toolCalls)) {
+      const toolResult = await executeToolCall(
+        tool.name,
+        tool.arguments
+      );
+
+      updatedMessages.push({
+        role: 'tool',
+        tool_call_id: tool.id,
+        content:
+          typeof toolResult === 'string'
+            ? toolResult
+            : JSON.stringify(toolResult),
+      } as any);
+    }
+
+    // =========================
+    // 5. SECOND MODEL CALL
+    // =========================
+    onIncomingChunk(
+      `✨ Generating response...\n\n`,
+      'system' as OpenAIChatRole
+    );
+
+    const finalStream = await dynamicClient.chat.completions.create(
+      {
+        model,
+        messages: updatedMessages,
+        stream: true,
+        ...rest,
+      },
+      { signal }
+    );
+
+    let finalContent = '';
+
+    for await (const chunk of finalStream) {
+      const delta = chunk.choices?.[0]?.delta;
+      if (!delta) continue;
+
+      const contentChunk = delta.content ?? '';
+      finalContent += contentChunk;
+
+      if (contentChunk) {
+        onIncomingChunk(contentChunk, 'assistant');
+      }
+    }
+
+    onCloseStream(beforeTimestamp);
+
+    return {
+      content: finalContent,
+      role: 'assistant' as OpenAIChatRole,
+    };
+  } catch (error) {
+    console.error('Error in openAiStreamingDataHandler:', error);
+    onCloseStream(beforeTimestamp);
+    throw error;
   }
-
-  onCloseStream(beforeTimestamp);
-
-  return { content, role } as OpenAIChatMessage;
 };
 
 
